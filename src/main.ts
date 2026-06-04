@@ -35,6 +35,12 @@ type HoverValue = {
 
 type SidebarTab = "expressions" | "extractor";
 
+type ExtractedFormula = {
+  formula: string;
+  plotExpression: string | null;
+  note: string;
+};
+
 const COLORS = ["#c74440", "#2d70b3", "#388c46", "#6042a6", "#fa7e19", "#000000", "#9c27b0", "#00897b"];
 
 const START_EXPRESSIONS = ["sin(x)", "0.25x^2 - 2", "cos(2x)", "sqrt(16 - x^2)"];
@@ -50,7 +56,8 @@ const EXAMPLES = [
   "1/(x-1)",
 ];
 
-const CODE_PLACEHOLDER = `robot_vel_b = _body_vectors_in_anchor_frame(robot_rel_vel_w, command.robot_anchor_quat_w)
+const CODE_PLACEHOLDER = `sum(square(command_vel[:, :2] - robot_vel_yaw[:, :2]), dim=1)
+robot_vel_b = _body_vectors_in_anchor_frame(robot_rel_vel_w, command.robot_anchor_quat_w)
 diff = ref_vel_b - robot_vel_b
 return torch.exp(-(diff * diff).sum(dim=-1).mean(dim=-1) / (std * std))`;
 
@@ -1029,20 +1036,35 @@ class GraphingCalculator {
     });
   }
 
-  private extractFormulasFromCode(source: string): string[] {
-    const formulas: string[] = [];
+  private extractFormulasFromCode(source: string): ExtractedFormula[] {
+    const formulas: ExtractedFormula[] = [];
+    const seen = new Set<string>();
 
     for (const line of this.getLogicalCodeLines(source)) {
       if (this.isNonFormulaCodeLine(line)) {
         continue;
       }
 
-      const formula = this.extractFormulaFromLine(line);
-      if (!formula || !this.looksLikeFormula(formula) || formulas.includes(formula)) {
+      const extracted = this.extractFormulaFromLine(line);
+      if (!extracted || !this.looksLikeFormula(extracted.rawFormula)) {
         continue;
       }
 
-      formulas.push(formula);
+      const symbolicExpression = this.toSymbolicFormula(extracted.rawExpression);
+      const formula = extracted.target ? `${extracted.target} = ${symbolicExpression}` : symbolicExpression;
+      if (seen.has(formula)) {
+        continue;
+      }
+
+      const plotExpression = this.toPlotExpression(extracted.rawExpression);
+      formulas.push({
+        formula,
+        plotExpression,
+        note: plotExpression
+          ? "Can be added to the graph as an x expression."
+          : "Formula result only. Tensor, vector, matrix, or non-x variables are not plotted by this graph.",
+      });
+      seen.add(formula);
     }
 
     return formulas;
@@ -1096,30 +1118,52 @@ class GraphingCalculator {
       || /^#/.test(compact);
   }
 
-  private extractFormulaFromLine(line: string): string | null {
+  private extractFormulaFromLine(line: string): { target: string | null; rawExpression: string; rawFormula: string } | null {
     const cleaned = line.trim().replace(/[;{}]+$/g, "").trim();
     const returnMatch = cleaned.match(/^return\s+(.+)$/);
     if (returnMatch) {
-      return this.normalizeCodeFormula(returnMatch[1]);
+      const rawExpression = returnMatch[1].trim();
+      return {
+        target: null,
+        rawExpression,
+        rawFormula: rawExpression,
+      };
     }
 
     const assignmentMatch = cleaned.match(/^(.+?)\s*(\+=|-=|\*=|\/=|%=|=(?!=))\s*(.+)$/);
-    if (!assignmentMatch) {
-      return null;
+    if (assignmentMatch) {
+      const [, rawTarget, operator, rawExpression] = assignmentMatch;
+      const target = this.normalizeAssignmentTarget(rawTarget);
+      const expression = rawExpression.trim();
+      if (!target || !expression) {
+        return null;
+      }
+
+      if (operator === "=") {
+        return {
+          target,
+          rawExpression: expression,
+          rawFormula: `${target} = ${expression}`,
+        };
+      }
+
+      return {
+        target,
+        rawExpression: `${target} ${operator[0]} (${expression})`,
+        rawFormula: `${target} = ${target} ${operator[0]} (${expression})`,
+      };
     }
 
-    const [, rawTarget, operator, rawExpression] = assignmentMatch;
-    const target = this.normalizeAssignmentTarget(rawTarget);
-    const expression = this.normalizeCodeFormula(rawExpression);
-    if (!target || !expression) {
-      return null;
+    const expression = cleaned.trim();
+    if (expression && this.looksLikeFormula(expression)) {
+      return {
+        target: null,
+        rawExpression: expression,
+        rawFormula: expression,
+      };
     }
 
-    if (operator === "=") {
-      return `${target} = ${expression}`;
-    }
-
-    return `${target} = ${target} ${operator[0]} (${expression})`;
+    return null;
   }
 
   private normalizeAssignmentTarget(source: string): string {
@@ -1144,6 +1188,224 @@ class GraphingCalculator {
       .replace(/\s+/g, " ");
   }
 
+  private toSymbolicFormula(source: string): string {
+    let formula = this.normalizeCodeFormula(source);
+    formula = this.rewriteFunctionCalls(formula, "square", (args) => `(${args[0] ?? ""})^2`);
+    formula = this.rewriteFunctionCalls(formula, "pow", (args) => `(${args[0] ?? ""})^(${args[1] ?? ""})`);
+    formula = this.rewriteFunctionCalls(formula, "sum", (args) => this.formatReduction("Σ", args));
+    formula = this.rewriteFunctionCalls(formula, "mean", (args) => this.formatReduction("mean", args));
+    formula = this.rewriteMethodReductions(formula);
+    return formula
+      .replace(/\s*\*\s*/g, " · ")
+      .replace(/\s*\/\s*/g, " / ")
+      .replace(/\s+-\s+/g, " - ")
+      .replace(/\s*\+\s*/g, " + ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  private toPlotExpression(source: string): string | null {
+    let expression = this.normalizeCodeFormula(source);
+    expression = this.rewriteFunctionCalls(expression, "square", (args) => `(${args[0] ?? ""})^2`);
+
+    if (!this.isPlotCompatibleExpression(expression)) {
+      return null;
+    }
+
+    try {
+      compileExpression(expression);
+      return expression;
+    } catch {
+      return null;
+    }
+  }
+
+  private rewriteFunctionCalls(
+    source: string,
+    name: string,
+    replacer: (args: string[]) => string,
+  ): string {
+    let result = source;
+    let searchFrom = 0;
+
+    while (searchFrom < result.length) {
+      const match = this.findFunctionCall(result, name, searchFrom);
+      if (!match) {
+        break;
+      }
+
+      const args = this.splitTopLevelArgs(result.slice(match.argsStart, match.argsEnd));
+      const replacement = replacer(args);
+      result = `${result.slice(0, match.start)}${replacement}${result.slice(match.end + 1)}`;
+      searchFrom = match.start + replacement.length;
+    }
+
+    return result;
+  }
+
+  private findFunctionCall(
+    source: string,
+    name: string,
+    searchFrom: number,
+  ): { start: number; argsStart: number; argsEnd: number; end: number } | null {
+    const pattern = `${name}(`;
+    let start = source.indexOf(pattern, searchFrom);
+
+    while (start !== -1) {
+      const previous = source[start - 1] ?? "";
+      if (!/[a-zA-Z0-9_.]/.test(previous)) {
+        const openParen = start + name.length;
+        const closeParen = this.findMatchingParen(source, openParen);
+        if (closeParen !== -1) {
+          return {
+            start,
+            argsStart: openParen + 1,
+            argsEnd: closeParen,
+            end: closeParen,
+          };
+        }
+      }
+      start = source.indexOf(pattern, start + pattern.length);
+    }
+
+    return null;
+  }
+
+  private splitTopLevelArgs(source: string): string[] {
+    const args: string[] = [];
+    let depth = 0;
+    let start = 0;
+
+    for (let index = 0; index < source.length; index += 1) {
+      const char = source[index];
+      if ("([{".includes(char)) {
+        depth += 1;
+      } else if (")]}".includes(char)) {
+        depth -= 1;
+      } else if (char === "," && depth === 0) {
+        args.push(source.slice(start, index).trim());
+        start = index + 1;
+      }
+    }
+
+    const last = source.slice(start).trim();
+    if (last) {
+      args.push(last);
+    }
+
+    return args;
+  }
+
+  private findMatchingParen(source: string, openParen: number): number {
+    let depth = 0;
+    for (let index = openParen; index < source.length; index += 1) {
+      const char = source[index];
+      if (char === "(") {
+        depth += 1;
+      } else if (char === ")") {
+        depth -= 1;
+        if (depth === 0) {
+          return index;
+        }
+      }
+    }
+    return -1;
+  }
+
+  private formatReduction(symbol: "Σ" | "mean", args: string[]): string {
+    const value = args[0] ?? "";
+    const dims = args.slice(1).filter((arg) => /\bdim\s*=/.test(arg));
+    const suffix = dims.length > 0 ? `_{${dims.join(", ")}}` : "";
+    return `${symbol}${suffix}(${value})`;
+  }
+
+  private rewriteMethodReductions(source: string): string {
+    let result = source;
+    let changed = true;
+
+    while (changed) {
+      changed = false;
+      for (const method of ["sum", "mean"] as const) {
+        const marker = `.${method}(`;
+        const markerIndex = result.indexOf(marker);
+        if (markerIndex === -1) {
+          continue;
+        }
+
+        const argsOpen = markerIndex + marker.length - 1;
+        const argsEnd = this.findMatchingParen(result, argsOpen);
+        if (argsEnd === -1) {
+          continue;
+        }
+
+        const baseStart = this.findMethodBaseStart(result, markerIndex - 1);
+        const base = result.slice(baseStart, markerIndex).trim();
+        const args = this.splitTopLevelArgs(result.slice(argsOpen + 1, argsEnd));
+        const replacement = this.formatReduction(method === "sum" ? "Σ" : "mean", [base, ...args]);
+        result = `${result.slice(0, baseStart)}${replacement}${result.slice(argsEnd + 1)}`;
+        changed = true;
+        break;
+      }
+    }
+
+    return result;
+  }
+
+  private findMethodBaseStart(source: string, baseEnd: number): number {
+    let index = baseEnd;
+    while (index >= 0 && /\s/.test(source[index])) {
+      index -= 1;
+    }
+
+    if (source[index] === ")") {
+      const openParen = this.findMatchingOpenParen(source, index);
+      if (openParen !== -1) {
+        index = openParen - 1;
+        while (index >= 0 && /[a-zA-Z0-9_Σ{}=:\-]/.test(source[index])) {
+          index -= 1;
+        }
+        return index + 1;
+      }
+    }
+
+    while (index >= 0 && !/[\s+\-*\/%^=,<>&|!?;]/.test(source[index])) {
+      index -= 1;
+    }
+    return index + 1;
+  }
+
+  private findMatchingOpenParen(source: string, closeParen: number): number {
+    let depth = 0;
+    for (let index = closeParen; index >= 0; index -= 1) {
+      const char = source[index];
+      if (char === ")") {
+        depth += 1;
+      } else if (char === "(") {
+        depth -= 1;
+        if (depth === 0) {
+          return index;
+        }
+      }
+    }
+    return -1;
+  }
+
+  private isPlotCompatibleExpression(expression: string): boolean {
+    if (/[\[\]:]|\.|Σ|_{|->/.test(expression)) {
+      return false;
+    }
+
+    const names = expression.match(/[a-zA-Z_]\w*/g) ?? [];
+    return names.every((name) => {
+      const normalized = name.toLowerCase();
+      return normalized === "x"
+        || normalized === "pi"
+        || normalized === "e"
+        || normalized === "tau"
+        || normalized in FUNCTIONS;
+    });
+  }
+
   private looksLikeFormula(formula: string): boolean {
     const assignment = formula.match(/^[a-zA-Z_][\w.\[\]]*\s*=\s*(.+)$/);
     const expression = assignment?.[1] ?? formula;
@@ -1152,7 +1414,7 @@ class GraphingCalculator {
       || /\.(?:sum|mean|norm|pow|sqrt|exp|min|max)\s*\(/.test(expression);
   }
 
-  private renderExtractedFormulas(formulas: string[]): void {
+  private renderExtractedFormulas(formulas: ExtractedFormula[]): void {
     if (formulas.length === 0) {
       const empty = document.createElement("p");
       empty.className = "empty-result";
@@ -1168,21 +1430,51 @@ class GraphingCalculator {
 
       const code = document.createElement("code");
       code.className = "formula-text";
-      code.textContent = formula;
+      code.textContent = formula.formula;
 
-      const copy = document.createElement("button");
-      copy.className = "secondary-button compact";
-      copy.type = "button";
-      copy.textContent = "Copy";
-      copy.addEventListener("click", () => {
-        void this.copyText(formula, copy);
+      const note = document.createElement("p");
+      note.className = formula.plotExpression ? "formula-note plot-ready" : "formula-note";
+      note.textContent = formula.note;
+
+      const actions = document.createElement("div");
+      actions.className = "formula-actions";
+
+      const copy = this.createFormulaButton("Copy formula", () => {
+        void this.copyText(formula.formula, copy);
       });
+      actions.append(copy);
 
-      item.replaceChildren(code, copy);
+      if (formula.plotExpression) {
+        const plotCode = document.createElement("code");
+        plotCode.className = "plot-expression";
+        plotCode.textContent = `Graph: ${formula.plotExpression}`;
+
+        const add = this.createFormulaButton("Add to graph", () => {
+          this.switchSidebarTab("expressions");
+          this.addExpression(formula.plotExpression ?? "");
+        });
+        const copyPlot = this.createFormulaButton("Copy graph", () => {
+          void this.copyText(formula.plotExpression ?? "", copyPlot);
+        });
+
+        actions.append(add, copyPlot);
+        item.replaceChildren(code, plotCode, note, actions);
+      } else {
+        item.replaceChildren(code, note, actions);
+      }
       fragment.append(item);
     }
 
     this.extractedList.replaceChildren(fragment);
+  }
+
+  private createFormulaButton(label: string, onClick: () => void): HTMLButtonElement {
+    const button = document.createElement("button");
+    button.className = "secondary-button compact";
+    button.type = "button";
+    button.textContent = label;
+    button.addEventListener("click", onClick);
+    return button;
   }
 
   private getRenderedFormulas(): string[] {

@@ -331,7 +331,6 @@ body {
 
 .formula-result {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
   align-items: start;
   padding: 9px;
@@ -343,9 +342,38 @@ body {
 .formula-text {
   overflow: auto;
   color: var(--text);
+  font: 600 12px/1.45 "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.plot-expression {
+  display: block;
+  overflow: auto;
+  padding: 7px 8px;
+  border-radius: 8px;
+  background: rgb(28 115 232 / 9%);
+  color: var(--primary);
   font: 12px/1.45 "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.formula-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.formula-note.plot-ready {
+  color: var(--primary);
+}
+
+.formula-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .plot-area {
