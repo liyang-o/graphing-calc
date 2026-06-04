@@ -10,12 +10,19 @@ type Token = {
 
 type Evaluator = (x: number) => number;
 
+type PointDefinition = {
+  label: string;
+  x: number;
+  y: number;
+};
+
 type ExpressionItem = {
   id: number;
   text: string;
   color: string;
   enabled: boolean;
   fn: Evaluator | null;
+  point: PointDefinition | null;
   error: string | null;
 };
 
@@ -41,6 +48,15 @@ type ExtractedFormula = {
   note: string;
 };
 
+type KeyboardTab = "numbers" | "functions" | "letters" | "symbols";
+
+type KeyboardKey = {
+  label: string;
+  insert?: string;
+  action?: "backspace" | "enter" | "left" | "right" | "space";
+  wide?: boolean;
+};
+
 const COLORS = ["#c74440", "#2d70b3", "#388c46", "#6042a6", "#fa7e19", "#000000", "#9c27b0", "#00897b"];
 
 const START_EXPRESSIONS = ["sin(x)", "0.25x^2 - 2", "cos(2x)", "sqrt(16 - x^2)"];
@@ -54,6 +70,127 @@ const EXAMPLES = [
   "(x+2)(x-3)",
   "sqrt(9-x^2)",
   "1/(x-1)",
+];
+
+const KEYBOARD_TABS: Array<{ id: KeyboardTab; label: string; keys: KeyboardKey[] }> = [
+  {
+    id: "numbers",
+    label: "123",
+    keys: [
+      { label: "x", insert: "x" },
+      { label: "y=", insert: "y=" },
+      { label: "pi", insert: "pi" },
+      { label: "e", insert: "e" },
+      { label: "7", insert: "7" },
+      { label: "8", insert: "8" },
+      { label: "9", insert: "9" },
+      { label: "x", insert: "x" },
+      { label: "+", insert: "+" },
+      { label: "^2", insert: "^2" },
+      { label: "^", insert: "^" },
+      { label: "sqrt", insert: "sqrt(" },
+      { label: "!", insert: "!" },
+      { label: "4", insert: "4" },
+      { label: "5", insert: "5" },
+      { label: "6", insert: "6" },
+      { label: "*", insert: "*" },
+      { label: "-", insert: "-" },
+      { label: "<", insert: "<" },
+      { label: ">", insert: ">" },
+      { label: "abs", insert: "abs(" },
+      { label: "=", insert: "=" },
+      { label: "1", insert: "1" },
+      { label: "2", insert: "2" },
+      { label: "3", insert: "3" },
+      { label: "/", insert: "/" },
+      { label: "⌫", action: "backspace" },
+      { label: "ans", insert: "ans", wide: true },
+      { label: ",", insert: "," },
+      { label: "(", insert: "(" },
+      { label: ")", insert: ")" },
+      { label: "0", insert: "0" },
+      { label: ".", insert: "." },
+      { label: "←", action: "left" },
+      { label: "→", action: "right" },
+      { label: "↵", action: "enter" },
+    ],
+  },
+  {
+    id: "functions",
+    label: "f(x)",
+    keys: [
+      { label: "sin", insert: "sin(" },
+      { label: "cos", insert: "cos(" },
+      { label: "tan", insert: "tan(" },
+      { label: "%", insert: "%" },
+      { label: "!", insert: "!" },
+      { label: "$", insert: "$" },
+      { label: "°", insert: "°" },
+      { label: "asin", insert: "asin(" },
+      { label: "acos", insert: "acos(" },
+      { label: "atan", insert: "atan(" },
+      { label: "{", insert: "{" },
+      { label: "}", insert: "}" },
+      { label: "<=", insert: "<=" },
+      { label: ">=", insert: ">=" },
+      { label: "ln", insert: "ln(" },
+      { label: "log", insert: "log(" },
+      { label: "log10", insert: "log10(" },
+      { label: "d/dx", insert: "d/dx " },
+      { label: "∫", insert: "integral(" },
+      { label: "i", insert: "i" },
+      { label: "⌫", action: "backspace" },
+      { label: "exp", insert: "exp(" },
+      { label: "10^", insert: "10^(" },
+      { label: "nthroot", insert: "pow(" },
+      { label: "space", action: "space" },
+      { label: "←", action: "left" },
+      { label: "→", action: "right" },
+      { label: "↵", action: "enter" },
+    ],
+  },
+  {
+    id: "letters",
+    label: "ABC",
+    keys: "qwertyuiopasdfghjklzxcvbnm".split("").map((letter) => ({ label: letter, insert: letter })),
+  },
+  {
+    id: "symbols",
+    label: "#&¬",
+    keys: [
+      { label: "∞", insert: "Infinity" },
+      { label: "±", insert: "+-" },
+      { label: "≠", insert: "!=" },
+      { label: "^", insert: "^" },
+      { label: "∨", insert: " or " },
+      { label: "¬", insert: "!" },
+      { label: "⊙", insert: "dot(" },
+      { label: "[", insert: "[" },
+      { label: "]", insert: "]" },
+      { label: "|", insert: "|" },
+      { label: "⊥", insert: "perp" },
+      { label: "ε", insert: "e" },
+      { label: "c", insert: "c" },
+      { label: "ξ", insert: "xi" },
+      { label: "∠", insert: "angle" },
+      { label: "→", insert: "->" },
+      { label: "()", insert: "()" },
+      { label: "\\", insert: "\\" },
+      { label: "&", insert: "&" },
+      { label: "@", insert: "@" },
+      { label: "#", insert: "#" },
+      { label: "$", insert: "$" },
+      { label: "⌫", action: "backspace" },
+      { label: ";", insert: ";" },
+      { label: ":", insert: ":" },
+      { label: "'", insert: "'" },
+      { label: "\"", insert: "\"" },
+      { label: "space", action: "space", wide: true },
+      { label: "←", action: "left" },
+      { label: "→", action: "right" },
+      { label: "↵", action: "enter" },
+    ],
+  },
 ];
 
 const CODE_PLACEHOLDER = `sum(square(command_vel[:, :2] - robot_vel_yaw[:, :2]), dim=1)
@@ -116,13 +253,13 @@ function tokenize(source: string): Token[] {
       continue;
     }
 
-    if (char === "(") {
+    if ("({[".includes(char)) {
       tokens.push({ type: "leftParen", value: char, index });
       index += 1;
       continue;
     }
 
-    if (char === ")") {
+    if (")}]".includes(char)) {
       tokens.push({ type: "rightParen", value: char, index });
       index += 1;
       continue;
@@ -424,7 +561,10 @@ class GraphingCalculator {
   private expressions: ExpressionItem[] = [];
   private nextId = 1;
   private gridDivisions = 10;
+  private keyboardTab: KeyboardTab = "numbers";
+  private activeTextInput: HTMLInputElement | HTMLTextAreaElement | null = null;
   private view: ViewBox = { xMin: -10, xMax: 10, yMin: -10, yMax: 10 };
+  private viewHistory: ViewBox[] = [];
   private pointer: { x: number; y: number } | null = null;
   private dragStart: { clientX: number; clientY: number; view: ViewBox } | null = null;
 
@@ -461,6 +601,12 @@ class GraphingCalculator {
   private template(): string {
     return `
       <main class="calculator">
+        <nav class="tool-rail" aria-label="Calculator tools">
+          <button class="rail-button active" type="button" data-sidebar-tab="expressions" title="Expressions">☰</button>
+          <button class="rail-button" type="button" data-sidebar-tab="extractor" title="Extract formulas">fx</button>
+          <button class="rail-button" type="button" data-keyboard-toggle title="Math keyboard">⌨</button>
+          <button class="rail-button" type="button" data-action="reset-view" title="Reset graph">↺</button>
+        </nav>
         <aside class="sidebar">
           <header class="brand">
             <h1>Graphing Calculator</h1>
@@ -501,6 +647,8 @@ class GraphingCalculator {
         </aside>
         <section class="plot-area">
           <canvas id="graph-canvas" aria-label="Interactive coordinate plane"></canvas>
+          <button id="undo-view" class="graph-corner-button undo" type="button" title="Undo view change">↶</button>
+          <button id="graph-settings" class="graph-corner-button settings" type="button" title="Show or hide graph controls">⚙</button>
           <div class="toolbar" aria-label="Graph controls">
             <button id="zoom-in" type="button" title="Zoom in">+</button>
             <button id="zoom-out" type="button" title="Zoom out">−</button>
@@ -517,13 +665,63 @@ class GraphingCalculator {
             Mouse wheel zooms at the cursor, drag pans the plane, and double-click resets. Supported: <code>sin cos tan sqrt abs ln log exp min max pow</code>, constants <code>pi e tau</code>, implicit multiplication like <code>2x</code>.
           </div>
         </section>
+        ${this.keyboardTemplate()}
       </main>
+    `;
+  }
+
+  private keyboardTemplate(): string {
+    return `
+      <section class="math-keyboard" aria-label="Math keyboard">
+        <nav class="keyboard-tabs" aria-label="Keyboard tabs">
+          ${KEYBOARD_TABS.map((tab) => `
+            <button
+              class="keyboard-tab ${tab.id === this.keyboardTab ? "active" : ""}"
+              type="button"
+              data-keyboard-tab="${tab.id}"
+              aria-selected="${tab.id === this.keyboardTab}"
+            >${tab.label}</button>
+          `).join("")}
+        </nav>
+        <div class="keyboard-pages">
+          ${KEYBOARD_TABS.map((tab) => `
+            <div class="keyboard-page ${tab.id === this.keyboardTab ? "active" : ""}" data-keyboard-page="${tab.id}" ${tab.id === this.keyboardTab ? "" : "hidden"}>
+              ${tab.keys.map((key) => `
+                <button
+                  class="keyboard-key ${key.wide ? "wide" : ""}"
+                  type="button"
+                  ${key.insert ? `data-insert="${this.escapeAttribute(key.insert)}"` : ""}
+                  ${key.action ? `data-key-action="${key.action}"` : ""}
+                >${key.label}</button>
+              `).join("")}
+            </div>
+          `).join("")}
+        </div>
+      </section>
     `;
   }
 
   private bindEvents(root: HTMLElement): void {
     root.querySelectorAll<HTMLButtonElement>("[data-sidebar-tab]").forEach((button) => {
       button.addEventListener("click", () => this.switchSidebarTab(button.dataset.sidebarTab as SidebarTab));
+    });
+    root.querySelector<HTMLButtonElement>('[data-action="reset-view"]')?.addEventListener("click", () => {
+      this.pushViewHistory();
+      this.resetView();
+      this.draw();
+      this.updateReadout();
+    });
+    root.querySelector<HTMLButtonElement>("[data-keyboard-toggle]")?.addEventListener("click", () => {
+      root.querySelector<HTMLElement>(".math-keyboard")?.classList.toggle("collapsed");
+      this.resizeCanvas();
+      this.draw();
+    });
+    root.querySelectorAll<HTMLButtonElement>("[data-keyboard-tab]").forEach((button) => {
+      button.addEventListener("click", () => this.switchKeyboardTab(button.dataset.keyboardTab as KeyboardTab));
+    });
+    root.querySelectorAll<HTMLButtonElement>(".keyboard-key").forEach((button) => {
+      button.addEventListener("mousedown", (event) => event.preventDefault());
+      button.addEventListener("click", () => this.handleKeyboardKey(button));
     });
 
     root.querySelector<HTMLButtonElement>("#add-expression")?.addEventListener("click", () => {
@@ -537,11 +735,16 @@ class GraphingCalculator {
     root.querySelector<HTMLButtonElement>("#zoom-in")?.addEventListener("click", () => this.zoomAt(0.75));
     root.querySelector<HTMLButtonElement>("#zoom-out")?.addEventListener("click", () => this.zoomAt(1.33));
     root.querySelector<HTMLButtonElement>("#reset-view")?.addEventListener("click", () => {
+      this.pushViewHistory();
       this.resetView();
       this.draw();
       this.updateReadout();
     });
     root.querySelector<HTMLButtonElement>("#export-png")?.addEventListener("click", () => this.exportPng());
+    root.querySelector<HTMLButtonElement>("#undo-view")?.addEventListener("click", () => this.undoViewChange());
+    root.querySelector<HTMLButtonElement>("#graph-settings")?.addEventListener("click", () => {
+      root.querySelector<HTMLElement>(".toolbar")?.classList.toggle("hidden");
+    });
     root.querySelector<HTMLInputElement>("#grid-size")?.addEventListener("input", (event) => {
       const slider = event.currentTarget as HTMLInputElement;
       this.gridDivisions = Number(slider.value);
@@ -559,6 +762,7 @@ class GraphingCalculator {
     root.querySelector<HTMLButtonElement>("#clear-code")?.addEventListener("click", () => {
       this.codeInput.value = "";
       this.renderExtractedFormulas([]);
+      this.activeTextInput = this.codeInput;
       this.codeInput.focus();
     });
     root.querySelector<HTMLButtonElement>("#copy-all-formulas")?.addEventListener("click", (event) => {
@@ -567,6 +771,9 @@ class GraphingCalculator {
         return;
       }
       void this.copyText(formulas.join("\n"), event.currentTarget as HTMLButtonElement);
+    });
+    this.codeInput.addEventListener("focus", () => {
+      this.activeTextInput = this.codeInput;
     });
 
     window.addEventListener("resize", () => {
@@ -584,6 +791,7 @@ class GraphingCalculator {
     this.canvas.addEventListener("pointerdown", (event) => {
       this.canvas.setPointerCapture(event.pointerId);
       this.canvas.classList.add("dragging");
+      this.pushViewHistory();
       this.dragStart = {
         clientX: event.clientX,
         clientY: event.clientY,
@@ -635,6 +843,7 @@ class GraphingCalculator {
     });
 
     this.canvas.addEventListener("dblclick", () => {
+      this.pushViewHistory();
       this.resetView();
       this.draw();
       this.updateReadout();
@@ -663,8 +872,124 @@ class GraphingCalculator {
     }
 
     if (tab === "extractor") {
+      this.activeTextInput = this.codeInput;
       this.codeInput.focus();
     }
+  }
+
+  private switchKeyboardTab(tab: KeyboardTab): void {
+    if (!KEYBOARD_TABS.some((item) => item.id === tab)) {
+      return;
+    }
+
+    this.keyboardTab = tab;
+    this.root.querySelectorAll<HTMLButtonElement>("[data-keyboard-tab]").forEach((button) => {
+      const isActive = button.dataset.keyboardTab === tab;
+      button.classList.toggle("active", isActive);
+      button.setAttribute("aria-selected", String(isActive));
+    });
+    this.root.querySelectorAll<HTMLElement>("[data-keyboard-page]").forEach((page) => {
+      const isActive = page.dataset.keyboardPage === tab;
+      page.classList.toggle("active", isActive);
+      page.hidden = !isActive;
+    });
+  }
+
+  private handleKeyboardKey(button: HTMLButtonElement): void {
+    const input = this.ensureActiveTextInput();
+    const action = button.dataset.keyAction as KeyboardKey["action"] | undefined;
+
+    if (action) {
+      this.handleKeyboardAction(input, action);
+      return;
+    }
+
+    this.insertIntoActiveInput(button.dataset.insert ?? "");
+  }
+
+  private ensureActiveTextInput(): HTMLInputElement | HTMLTextAreaElement {
+    if (this.activeTextInput && document.contains(this.activeTextInput)) {
+      this.activeTextInput.focus();
+      return this.activeTextInput;
+    }
+
+    const input = this.list.querySelector<HTMLInputElement>(".expression-input");
+    if (input) {
+      this.activeTextInput = input;
+      input.focus();
+      return input;
+    }
+
+    this.addExpression("");
+    const inputs = this.list.querySelectorAll<HTMLInputElement>(".expression-input");
+    const nextInput = inputs[inputs.length - 1];
+    if (!nextInput) {
+      this.activeTextInput = this.codeInput;
+      this.codeInput.focus();
+      return this.codeInput;
+    }
+
+    this.activeTextInput = nextInput;
+    nextInput.focus();
+    return nextInput;
+  }
+
+  private handleKeyboardAction(input: HTMLInputElement | HTMLTextAreaElement, action: KeyboardKey["action"]): void {
+    if (action === "backspace") {
+      const start = input.selectionStart ?? input.value.length;
+      const end = input.selectionEnd ?? input.value.length;
+      if (start !== end) {
+        this.replaceInputRange(input, "", start, end);
+      } else if (start > 0) {
+        this.replaceInputRange(input, "", start - 1, start);
+      }
+      return;
+    }
+
+    if (action === "left" || action === "right") {
+      const position = input.selectionStart ?? input.value.length;
+      const next = action === "left" ? Math.max(0, position - 1) : Math.min(input.value.length, position + 1);
+      input.setSelectionRange(next, next);
+      input.focus();
+      return;
+    }
+
+    if (action === "space") {
+      this.insertIntoActiveInput(" ");
+      return;
+    }
+
+    if (action === "enter") {
+      if (input instanceof HTMLTextAreaElement) {
+        this.insertIntoActiveInput("\n");
+      } else {
+        this.addExpression("");
+      }
+    }
+  }
+
+  private insertIntoActiveInput(text: string): void {
+    if (!text) {
+      return;
+    }
+
+    const input = this.ensureActiveTextInput();
+    const start = input.selectionStart ?? input.value.length;
+    const end = input.selectionEnd ?? input.value.length;
+    this.replaceInputRange(input, text, start, end);
+  }
+
+  private replaceInputRange(
+    input: HTMLInputElement | HTMLTextAreaElement,
+    text: string,
+    start: number,
+    end: number,
+  ): void {
+    input.value = `${input.value.slice(0, start)}${text}${input.value.slice(end)}`;
+    const next = start + text.length;
+    input.setSelectionRange(next, next);
+    input.focus();
+    input.dispatchEvent(new Event("input", { bubbles: true }));
   }
 
   private addExpression(text: string, color = COLORS[(this.nextId - 1) % COLORS.length], focus = true): void {
@@ -674,6 +999,7 @@ class GraphingCalculator {
       color,
       enabled: true,
       fn: null,
+      point: null,
       error: null,
     };
     this.nextId += 1;
@@ -686,8 +1012,11 @@ class GraphingCalculator {
     if (focus) {
       requestAnimationFrame(() => {
         const input = this.list.querySelector<HTMLInputElement>(`input[data-id="${expression.id}"]`);
-        input?.focus();
-        input?.select();
+        if (input) {
+          this.activeTextInput = input;
+          input.focus();
+          input.select();
+        }
       });
     }
   }
@@ -719,6 +1048,9 @@ class GraphingCalculator {
     `).join("");
 
     this.list.querySelectorAll<HTMLInputElement>(".expression-input").forEach((input) => {
+      input.addEventListener("focus", () => {
+        this.activeTextInput = input;
+      });
       input.addEventListener("input", () => {
         const expression = this.findExpression(input.dataset.id);
         if (!expression) return;
@@ -766,12 +1098,47 @@ class GraphingCalculator {
 
   private compile(expression: ExpressionItem): void {
     try {
+      const point = this.parsePointExpression(expression.text, expression.id);
+      if (point) {
+        expression.fn = null;
+        expression.point = point;
+        expression.error = null;
+        return;
+      }
+
       expression.fn = compileExpression(expression.text);
+      expression.point = null;
       expression.error = null;
     } catch (error) {
       expression.fn = null;
+      expression.point = null;
       expression.error = error instanceof Error ? error.message : "Invalid expression";
     }
+  }
+
+  private parsePointExpression(source: string, id: number): PointDefinition | null {
+    const trimmed = source.trim();
+    const named = trimmed.match(/^([a-zA-Z]\w*)\s*=\s*\((.*)\)$/);
+    const anonymous = trimmed.match(/^\((.*)\)$/);
+    const label = named?.[1] ?? `P${id}`;
+    const body = named?.[2] ?? anonymous?.[1];
+
+    if (!body) {
+      return null;
+    }
+
+    const parts = this.splitTopLevelArgs(body);
+    if (parts.length !== 2) {
+      return null;
+    }
+
+    const x = compileExpression(parts[0])(0);
+    const y = compileExpression(parts[1])(0);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      throw new Error("Point coordinates must be finite numbers");
+    }
+
+    return { label, x, y };
   }
 
   private findExpression(id: string | undefined): ExpressionItem | undefined {
@@ -808,6 +1175,24 @@ class GraphingCalculator {
     };
   }
 
+  private pushViewHistory(): void {
+    this.viewHistory.push({ ...this.view });
+    if (this.viewHistory.length > 40) {
+      this.viewHistory.shift();
+    }
+  }
+
+  private undoViewChange(): void {
+    const previous = this.viewHistory.pop();
+    if (!previous) {
+      return;
+    }
+
+    this.view = previous;
+    this.draw();
+    this.updateReadout();
+  }
+
   private draw(): void {
     const width = this.canvas.clientWidth;
     const height = this.canvas.clientHeight;
@@ -816,6 +1201,7 @@ class GraphingCalculator {
     this.context.fillRect(0, 0, width, height);
     this.drawGrid(width, height);
     this.drawFunctions(width, height);
+    this.drawPoints(width, height);
     this.drawPointer(width, height);
   }
 
@@ -914,6 +1300,33 @@ class GraphingCalculator {
     }
   }
 
+  private drawPoints(width: number, height: number): void {
+    for (const expression of this.expressions) {
+      if (!expression.enabled || !expression.point) {
+        continue;
+      }
+
+      const sx = this.worldToScreenX(expression.point.x, width);
+      const sy = this.worldToScreenY(expression.point.y, height);
+      if (!Number.isFinite(sx) || !Number.isFinite(sy)) {
+        continue;
+      }
+
+      this.context.save();
+      this.context.beginPath();
+      this.context.arc(sx, sy, 4.8, 0, Math.PI * 2);
+      this.context.fillStyle = expression.color;
+      this.context.fill();
+      this.context.lineWidth = 2;
+      this.context.strokeStyle = "#fff";
+      this.context.stroke();
+      this.context.font = "700 12px SFMono-Regular, Consolas, monospace";
+      this.context.fillStyle = expression.color;
+      this.context.fillText(expression.point.label, sx + 7, sy - 15);
+      this.context.restore();
+    }
+  }
+
   private drawPointer(width: number, height: number): void {
     if (!this.pointer || this.dragStart) {
       return;
@@ -958,6 +1371,7 @@ class GraphingCalculator {
     const focusX = this.screenToWorldX(screenX ?? width / 2, width);
     const focusY = this.screenToWorldY(screenY ?? height / 2, height);
 
+    this.pushViewHistory();
     this.view = {
       xMin: focusX + (this.view.xMin - focusX) * factor,
       xMax: focusX + (this.view.xMax - focusX) * factor,
