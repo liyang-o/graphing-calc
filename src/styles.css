@@ -45,7 +45,9 @@ body {
   z-index: 2;
   display: flex;
   flex-direction: column;
+  height: 100vh;
   min-width: 0;
+  min-height: 0;
   border-right: 1px solid var(--border);
   background: var(--panel);
   box-shadow: var(--shadow);
@@ -67,6 +69,47 @@ body {
   color: var(--muted);
   font-size: 13px;
   line-height: 1.45;
+}
+
+.sidebar-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-muted);
+}
+
+.sidebar-tab {
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+}
+
+.sidebar-tab.active {
+  border-color: var(--primary);
+  background: rgb(28 115 232 / 10%);
+  color: var(--primary);
+}
+
+.sidebar-panel {
+  flex: 1;
+  min-height: 0;
+}
+
+.sidebar-panel.active {
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-panel[hidden] {
+  display: none;
 }
 
 .expression-list {
@@ -131,6 +174,7 @@ body {
 
 .delete-button,
 .toolbar button,
+.secondary-button,
 .add-button {
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -174,6 +218,20 @@ body {
   background: #155ec2;
 }
 
+.secondary-button {
+  padding: 9px 12px;
+}
+
+.secondary-button:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.secondary-button.compact {
+  padding: 6px 9px;
+  font-size: 12px;
+}
+
 .examples {
   display: flex;
   flex-wrap: wrap;
@@ -193,6 +251,101 @@ body {
 .examples button:hover {
   border-color: var(--primary);
   color: var(--primary);
+}
+
+.extractor {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  padding: 14px;
+  gap: 12px;
+}
+
+.extractor-help {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.code-input {
+  width: 100%;
+  min-height: 190px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  outline: none;
+  padding: 12px;
+  background: var(--panel-muted);
+  color: var(--text);
+  font: 13px/1.45 "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+
+.code-input:focus {
+  border-color: var(--primary);
+  background: #fff;
+  box-shadow: 0 0 0 3px rgb(28 115 232 / 12%);
+}
+
+.extractor-actions {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.extracted-results {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.result-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-muted);
+}
+
+.extracted-formulas {
+  display: grid;
+  gap: 8px;
+  overflow: auto;
+  padding: 10px;
+}
+
+.empty-result {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.formula-result {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: start;
+  padding: 9px;
+  border: 1px solid #edf0f5;
+  border-radius: 12px;
+  background: var(--panel-muted);
+}
+
+.formula-text {
+  overflow: auto;
+  color: var(--text);
+  font: 12px/1.45 "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .plot-area {
@@ -219,6 +372,8 @@ canvas.dragging {
   top: 16px;
   right: 16px;
   display: flex;
+  align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   padding: 8px;
   border: 1px solid var(--border);
@@ -238,6 +393,31 @@ canvas.dragging {
 .toolbar button:hover {
   border-color: var(--primary);
   color: var(--primary);
+}
+
+.grid-control {
+  display: grid;
+  grid-template-columns: auto 88px 22px;
+  gap: 7px;
+  align-items: center;
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.grid-control input {
+  width: 88px;
+  accent-color: var(--primary);
+}
+
+.grid-control span:last-child {
+  color: var(--text);
+  text-align: right;
 }
 
 .coordinate-readout {
@@ -326,8 +506,22 @@ canvas.dragging {
   }
 
   .sidebar {
+    height: 44vh;
     border-right: 0;
     border-bottom: 1px solid var(--border);
+  }
+
+  .brand {
+    padding: 14px 16px 10px;
+  }
+
+  .code-input {
+    min-height: 120px;
+  }
+
+  .toolbar {
+    left: 16px;
+    right: 16px;
   }
 
   .help {

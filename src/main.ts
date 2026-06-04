@@ -33,6 +33,8 @@ type HoverValue = {
   inView: boolean;
 };
 
+type SidebarTab = "expressions" | "extractor";
+
 const COLORS = ["#c74440", "#2d70b3", "#388c46", "#6042a6", "#fa7e19", "#000000", "#9c27b0", "#00897b"];
 
 const START_EXPRESSIONS = ["sin(x)", "0.25x^2 - 2", "cos(2x)", "sqrt(16 - x^2)"];
@@ -47,6 +49,10 @@ const EXAMPLES = [
   "sqrt(9-x^2)",
   "1/(x-1)",
 ];
+
+const CODE_PLACEHOLDER = `robot_vel_b = _body_vectors_in_anchor_frame(robot_rel_vel_w, command.robot_anchor_quat_w)
+diff = ref_vel_b - robot_vel_b
+return torch.exp(-(diff * diff).sum(dim=-1).mean(dim=-1) / (std * std))`;
 
 const FUNCTIONS: Record<string, (...args: number[]) => number> = {
   abs: Math.abs,
@@ -401,12 +407,16 @@ function niceStep(rawStep: number): number {
 }
 
 class GraphingCalculator {
+  private readonly root: HTMLElement;
   private readonly canvas: HTMLCanvasElement;
   private readonly context: CanvasRenderingContext2D;
   private readonly list: HTMLDivElement;
   private readonly readout: HTMLDivElement;
+  private readonly codeInput: HTMLTextAreaElement;
+  private readonly extractedList: HTMLDivElement;
   private expressions: ExpressionItem[] = [];
   private nextId = 1;
+  private gridDivisions = 10;
   private view: ViewBox = { xMin: -10, xMax: 10, yMin: -10, yMax: 10 };
   private pointer: { x: number; y: number } | null = null;
   private dragStart: { clientX: number; clientY: number; view: ViewBox } | null = null;
@@ -418,15 +428,20 @@ class GraphingCalculator {
     const context = canvas?.getContext("2d");
     const list = root.querySelector<HTMLDivElement>("#expression-list");
     const readout = root.querySelector<HTMLDivElement>("#coordinate-readout");
+    const codeInput = root.querySelector<HTMLTextAreaElement>("#code-input");
+    const extractedList = root.querySelector<HTMLDivElement>("#extracted-formulas");
 
-    if (!canvas || !context || !list || !readout) {
+    if (!canvas || !context || !list || !readout || !codeInput || !extractedList) {
       throw new Error("Application template failed to initialize");
     }
 
+    this.root = root;
     this.canvas = canvas;
     this.context = context;
     this.list = list;
     this.readout = readout;
+    this.codeInput = codeInput;
+    this.extractedList = extractedList;
 
     START_EXPRESSIONS.forEach((text, index) => this.addExpression(text, COLORS[index % COLORS.length], false));
     this.bindEvents(root);
@@ -444,13 +459,38 @@ class GraphingCalculator {
             <h1>Graphing Calculator</h1>
             <p>Type expressions in x, for example <strong>sin(x)</strong>, <strong>x^2</strong>, <strong>sqrt(9-x^2)</strong>, or <strong>y = 1/(x-1)</strong>.</p>
           </header>
-          <section id="expression-list" class="expression-list" aria-label="Expressions"></section>
-          <footer class="sidebar-footer">
-            <button id="add-expression" class="add-button" type="button">+ Add expression</button>
-            <div class="examples" aria-label="Example expressions">
-              ${EXAMPLES.map((example) => `<button type="button" data-example="${example}">${example}</button>`).join("")}
+          <nav class="sidebar-tabs" aria-label="Sidebar tools">
+            <button class="sidebar-tab active" type="button" data-sidebar-tab="expressions" aria-selected="true">Expressions</button>
+            <button class="sidebar-tab" type="button" data-sidebar-tab="extractor" aria-selected="false">Extract formulas</button>
+          </nav>
+          <section id="expressions-panel" class="sidebar-panel active" aria-label="Expression input panel">
+            <section id="expression-list" class="expression-list" aria-label="Expressions"></section>
+            <footer class="sidebar-footer">
+              <button id="add-expression" class="add-button" type="button">+ Add expression</button>
+              <div class="examples" aria-label="Example expressions">
+                ${EXAMPLES.map((example) => `<button type="button" data-example="${example}">${example}</button>`).join("")}
+              </div>
+            </footer>
+          </section>
+          <section id="extractor-panel" class="sidebar-panel" aria-label="Code formula extraction panel" hidden>
+            <div class="extractor">
+              <p class="extractor-help">Paste Python or C++ code. The extractor skips control lines and keeps assignment/return formulas that look mathematical.</p>
+              <textarea id="code-input" class="code-input" spellcheck="false" placeholder="${CODE_PLACEHOLDER}"></textarea>
+              <div class="extractor-actions">
+                <button id="extract-formulas" class="add-button" type="button">Extract formulas</button>
+                <button id="clear-code" class="secondary-button" type="button">Clear</button>
+              </div>
+              <section class="extracted-results" aria-label="Extracted formulas">
+                <div class="result-header">
+                  <strong>Extracted formulas</strong>
+                  <button id="copy-all-formulas" class="secondary-button compact" type="button">Copy all</button>
+                </div>
+                <div id="extracted-formulas" class="extracted-formulas">
+                  <p class="empty-result">Extracted formulas will appear here.</p>
+                </div>
+              </section>
             </div>
-          </footer>
+          </section>
         </aside>
         <section class="plot-area">
           <canvas id="graph-canvas" aria-label="Interactive coordinate plane"></canvas>
@@ -459,6 +499,11 @@ class GraphingCalculator {
             <button id="zoom-out" type="button" title="Zoom out">−</button>
             <button id="reset-view" type="button" title="Reset view">Reset</button>
             <button id="export-png" type="button" title="Export graph as PNG">PNG</button>
+            <label class="grid-control" title="Adjust grid size">
+              <span>Grid</span>
+              <input id="grid-size" type="range" min="4" max="24" step="1" value="${this.gridDivisions}" />
+              <span id="grid-size-value">${this.gridDivisions}</span>
+            </label>
           </div>
           <div id="coordinate-readout" class="coordinate-readout">x: 0, y: 0</div>
           <div class="help">
@@ -470,6 +515,10 @@ class GraphingCalculator {
   }
 
   private bindEvents(root: HTMLElement): void {
+    root.querySelectorAll<HTMLButtonElement>("[data-sidebar-tab]").forEach((button) => {
+      button.addEventListener("click", () => this.switchSidebarTab(button.dataset.sidebarTab as SidebarTab));
+    });
+
     root.querySelector<HTMLButtonElement>("#add-expression")?.addEventListener("click", () => {
       this.addExpression("", COLORS[this.expressions.length % COLORS.length]);
     });
@@ -486,6 +535,32 @@ class GraphingCalculator {
       this.updateReadout();
     });
     root.querySelector<HTMLButtonElement>("#export-png")?.addEventListener("click", () => this.exportPng());
+    root.querySelector<HTMLInputElement>("#grid-size")?.addEventListener("input", (event) => {
+      const slider = event.currentTarget as HTMLInputElement;
+      this.gridDivisions = Number(slider.value);
+      const value = root.querySelector<HTMLSpanElement>("#grid-size-value");
+      if (value) {
+        value.textContent = String(this.gridDivisions);
+      }
+      this.draw();
+      this.updateReadout();
+    });
+
+    root.querySelector<HTMLButtonElement>("#extract-formulas")?.addEventListener("click", () => {
+      this.renderExtractedFormulas(this.extractFormulasFromCode(this.codeInput.value));
+    });
+    root.querySelector<HTMLButtonElement>("#clear-code")?.addEventListener("click", () => {
+      this.codeInput.value = "";
+      this.renderExtractedFormulas([]);
+      this.codeInput.focus();
+    });
+    root.querySelector<HTMLButtonElement>("#copy-all-formulas")?.addEventListener("click", (event) => {
+      const formulas = this.getRenderedFormulas();
+      if (formulas.length === 0) {
+        return;
+      }
+      void this.copyText(formulas.join("\n"), event.currentTarget as HTMLButtonElement);
+    });
 
     window.addEventListener("resize", () => {
       this.resizeCanvas();
@@ -557,6 +632,32 @@ class GraphingCalculator {
       this.draw();
       this.updateReadout();
     });
+  }
+
+  private switchSidebarTab(tab: SidebarTab): void {
+    if (tab !== "expressions" && tab !== "extractor") {
+      return;
+    }
+
+    this.root.querySelectorAll<HTMLButtonElement>("[data-sidebar-tab]").forEach((button) => {
+      const isActive = button.dataset.sidebarTab === tab;
+      button.classList.toggle("active", isActive);
+      button.setAttribute("aria-selected", String(isActive));
+    });
+
+    const expressionsPanel = this.root.querySelector<HTMLElement>("#expressions-panel");
+    const extractorPanel = this.root.querySelector<HTMLElement>("#extractor-panel");
+
+    if (expressionsPanel && extractorPanel) {
+      expressionsPanel.hidden = tab !== "expressions";
+      extractorPanel.hidden = tab !== "extractor";
+      expressionsPanel.classList.toggle("active", tab === "expressions");
+      extractorPanel.classList.toggle("active", tab === "extractor");
+    }
+
+    if (tab === "extractor") {
+      this.codeInput.focus();
+    }
   }
 
   private addExpression(text: string, color = COLORS[(this.nextId - 1) % COLORS.length], focus = true): void {
@@ -714,8 +815,8 @@ class GraphingCalculator {
   private drawGrid(width: number, height: number): void {
     const xRange = this.view.xMax - this.view.xMin;
     const yRange = this.view.yMax - this.view.yMin;
-    const xStep = niceStep(xRange / 10);
-    const yStep = niceStep(yRange / 10);
+    const xStep = niceStep(xRange / this.gridDivisions);
+    const yStep = niceStep(yRange / this.gridDivisions);
 
     this.context.lineWidth = 1;
     this.context.font = "12px SFMono-Regular, Consolas, monospace";
@@ -926,6 +1027,198 @@ class GraphingCalculator {
         inView: screenY >= 0 && screenY <= height,
       }];
     });
+  }
+
+  private extractFormulasFromCode(source: string): string[] {
+    const formulas: string[] = [];
+
+    for (const line of this.getLogicalCodeLines(source)) {
+      if (this.isNonFormulaCodeLine(line)) {
+        continue;
+      }
+
+      const formula = this.extractFormulaFromLine(line);
+      if (!formula || !this.looksLikeFormula(formula) || formulas.includes(formula)) {
+        continue;
+      }
+
+      formulas.push(formula);
+    }
+
+    return formulas;
+  }
+
+  private getLogicalCodeLines(source: string): string[] {
+    const lines: string[] = [];
+    let buffer = "";
+    let depth = 0;
+
+    for (const rawLine of source.split(/\r?\n/)) {
+      const line = this.stripCodeComments(rawLine);
+      if (!line) {
+        continue;
+      }
+
+      buffer = buffer ? `${buffer} ${line}` : line;
+      depth += this.countMatches(line, /[\[{(]/g) - this.countMatches(line, /[\]})]/g);
+
+      const continues = line.endsWith("\\") || /[,+\-*\/(]$/.test(line);
+      if (depth <= 0 && !continues) {
+        lines.push(buffer.replace(/\\\s*/g, " ").trim());
+        buffer = "";
+        depth = 0;
+      }
+    }
+
+    if (buffer) {
+      lines.push(buffer.trim());
+    }
+
+    return lines;
+  }
+
+  private stripCodeComments(line: string): string {
+    return line
+      .replace(/\/\/.*$/, "")
+      .replace(/#.*$/, "")
+      .trim();
+  }
+
+  private countMatches(source: string, pattern: RegExp): number {
+    return source.match(pattern)?.length ?? 0;
+  }
+
+  private isNonFormulaCodeLine(line: string): boolean {
+    const compact = line.trim();
+    return /^(?:import|from|using|namespace|class|struct|enum|def|template|public:|private:|protected:)\b/.test(compact)
+      || /^(?:if|else|elif|for|while|switch|case|try|catch|with)\b/.test(compact)
+      || /^[{}()[\];,]*$/.test(compact)
+      || /^#/.test(compact);
+  }
+
+  private extractFormulaFromLine(line: string): string | null {
+    const cleaned = line.trim().replace(/[;{}]+$/g, "").trim();
+    const returnMatch = cleaned.match(/^return\s+(.+)$/);
+    if (returnMatch) {
+      return this.normalizeCodeFormula(returnMatch[1]);
+    }
+
+    const assignmentMatch = cleaned.match(/^(.+?)\s*(\+=|-=|\*=|\/=|%=|=(?!=))\s*(.+)$/);
+    if (!assignmentMatch) {
+      return null;
+    }
+
+    const [, rawTarget, operator, rawExpression] = assignmentMatch;
+    const target = this.normalizeAssignmentTarget(rawTarget);
+    const expression = this.normalizeCodeFormula(rawExpression);
+    if (!target || !expression) {
+      return null;
+    }
+
+    if (operator === "=") {
+      return `${target} = ${expression}`;
+    }
+
+    return `${target} = ${target} ${operator[0]} (${expression})`;
+  }
+
+  private normalizeAssignmentTarget(source: string): string {
+    const withoutQualifiers = source
+      .replace(/\b(?:const|constexpr|static|volatile|mutable|inline)\b/g, "")
+      .trim();
+    const parts = withoutQualifiers.split(/\s+/);
+    return (parts[parts.length - 1] ?? "")
+      .replace(/^[*&]+/, "")
+      .replace(/\[[^\]]*]$/g, "")
+      .trim();
+  }
+
+  private normalizeCodeFormula(source: string): string {
+    return source
+      .trim()
+      .replace(/[;{}]+$/g, "")
+      .replace(/\b(?:torch|math|np|numpy)\./g, "")
+      .replace(/\bstd::/g, "")
+      .replace(/->/g, ".")
+      .replace(/\*\*/g, "^")
+      .replace(/\s+/g, " ");
+  }
+
+  private looksLikeFormula(formula: string): boolean {
+    const assignment = formula.match(/^[a-zA-Z_][\w.\[\]]*\s*=\s*(.+)$/);
+    const expression = assignment?.[1] ?? formula;
+    return /[+\-*\/^%]/.test(expression)
+      || /\b(?:sin|cos|tan|asin|acos|atan|sqrt|abs|exp|log|ln|pow|min|max|sum|mean|norm|dot|cross|clip|clamp)\b/.test(expression)
+      || /\.(?:sum|mean|norm|pow|sqrt|exp|min|max)\s*\(/.test(expression);
+  }
+
+  private renderExtractedFormulas(formulas: string[]): void {
+    if (formulas.length === 0) {
+      const empty = document.createElement("p");
+      empty.className = "empty-result";
+      empty.textContent = "No formulas found yet. Try code with assignments, returns, or math operations.";
+      this.extractedList.replaceChildren(empty);
+      return;
+    }
+
+    const fragment = document.createDocumentFragment();
+    for (const formula of formulas) {
+      const item = document.createElement("article");
+      item.className = "formula-result";
+
+      const code = document.createElement("code");
+      code.className = "formula-text";
+      code.textContent = formula;
+
+      const copy = document.createElement("button");
+      copy.className = "secondary-button compact";
+      copy.type = "button";
+      copy.textContent = "Copy";
+      copy.addEventListener("click", () => {
+        void this.copyText(formula, copy);
+      });
+
+      item.replaceChildren(code, copy);
+      fragment.append(item);
+    }
+
+    this.extractedList.replaceChildren(fragment);
+  }
+
+  private getRenderedFormulas(): string[] {
+    return Array.from(this.extractedList.querySelectorAll<HTMLElement>(".formula-text"))
+      .map((element) => element.textContent?.trim() ?? "")
+      .filter(Boolean);
+  }
+
+  private async copyText(text: string, button: HTMLButtonElement): Promise<void> {
+    const previousText = button.textContent ?? "Copy";
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        this.copyTextFallback(text);
+      }
+      button.textContent = "Copied";
+    } catch {
+      button.textContent = "Copy failed";
+    } finally {
+      window.setTimeout(() => {
+        button.textContent = previousText;
+      }, 1200);
+    }
+  }
+
+  private copyTextFallback(text: string): void {
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.style.position = "fixed";
+    textarea.style.left = "-9999px";
+    document.body.append(textarea);
+    textarea.focus();
+    textarea.select();
+    document.execCommand("copy");
+    textarea.remove();
   }
 
   private exportPng(): void {
