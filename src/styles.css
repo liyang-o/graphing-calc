@@ -244,14 +244,58 @@ canvas.dragging {
   position: absolute;
   left: 16px;
   bottom: 16px;
-  padding: 8px 12px;
+  display: grid;
+  gap: 8px;
+  width: min(360px, calc(100vw - 32px));
+  max-height: 42vh;
+  overflow: auto;
+  padding: 10px 12px;
   border: 1px solid var(--border);
-  border-radius: 999px;
-  background: rgb(255 255 255 / 86%);
+  border-radius: 14px;
+  background: rgb(255 255 255 / 90%);
   color: var(--muted);
   font: 13px/1.2 "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   box-shadow: 0 10px 30px rgb(31 45 61 / 8%);
   backdrop-filter: blur(12px);
+}
+
+.readout-header {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.readout-empty {
+  color: var(--muted);
+}
+
+.readout-series {
+  display: grid;
+  gap: 6px;
+}
+
+.readout-row {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.readout-marker {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.readout-label {
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.readout-value {
+  color: var(--text);
+  font-weight: 700;
 }
 
 .help {

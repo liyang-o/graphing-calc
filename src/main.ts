@@ -26,6 +26,13 @@ type ViewBox = {
   yMax: number;
 };
 
+type HoverValue = {
+  expression: ExpressionItem;
+  y: number;
+  screenY: number;
+  inView: boolean;
+};
+
 const COLORS = ["#c74440", "#2d70b3", "#388c46", "#6042a6", "#fa7e19", "#000000", "#9c27b0", "#00897b"];
 
 const START_EXPRESSIONS = ["sin(x)", "0.25x^2 - 2", "cos(2x)", "sqrt(16 - x^2)"];
@@ -476,12 +483,14 @@ class GraphingCalculator {
     root.querySelector<HTMLButtonElement>("#reset-view")?.addEventListener("click", () => {
       this.resetView();
       this.draw();
+      this.updateReadout();
     });
     root.querySelector<HTMLButtonElement>("#export-png")?.addEventListener("click", () => this.exportPng());
 
     window.addEventListener("resize", () => {
       this.resizeCanvas();
       this.draw();
+      this.updateReadout();
     });
 
     this.canvas.addEventListener("wheel", (event) => {
@@ -502,9 +511,9 @@ class GraphingCalculator {
 
     this.canvas.addEventListener("pointermove", (event) => {
       this.pointer = { x: event.offsetX, y: event.offsetY };
-      this.updateReadout();
 
       if (!this.dragStart) {
+        this.updateReadout();
         this.draw();
         return;
       }
@@ -521,6 +530,7 @@ class GraphingCalculator {
         yMax: this.dragStart.view.yMax + dy,
       };
       this.draw();
+      this.updateReadout();
     });
 
     this.canvas.addEventListener("pointerleave", () => {
@@ -533,6 +543,8 @@ class GraphingCalculator {
       this.canvas.releasePointerCapture(event.pointerId);
       this.canvas.classList.remove("dragging");
       this.dragStart = null;
+      this.updateReadout();
+      this.draw();
     });
 
     this.canvas.addEventListener("pointercancel", () => {
@@ -543,6 +555,7 @@ class GraphingCalculator {
     this.canvas.addEventListener("dblclick", () => {
       this.resetView();
       this.draw();
+      this.updateReadout();
     });
   }
 
@@ -560,6 +573,7 @@ class GraphingCalculator {
     this.expressions.push(expression);
     this.renderExpressionList();
     this.draw();
+    this.updateReadout();
 
     if (focus) {
       requestAnimationFrame(() => {
@@ -604,6 +618,7 @@ class GraphingCalculator {
         this.compile(expression);
         this.updateExpressionCard(expression);
         this.draw();
+        this.updateReadout();
       });
       input.addEventListener("keydown", (event) => {
         if (event.key === "Enter") {
@@ -618,6 +633,7 @@ class GraphingCalculator {
         if (!expression) return;
         expression.enabled = toggle.checked;
         this.draw();
+        this.updateReadout();
       });
     });
 
@@ -627,6 +643,7 @@ class GraphingCalculator {
         this.expressions = this.expressions.filter((expression) => expression.id !== id);
         this.renderExpressionList();
         this.draw();
+        this.updateReadout();
       });
     });
   }
@@ -794,12 +811,30 @@ class GraphingCalculator {
       return;
     }
 
+    const x = this.screenToWorldX(this.pointer.x, width);
+    const hoverValues = this.getHoverValues(x, height);
+
     this.context.save();
     this.context.strokeStyle = "rgb(28 115 232 / 24%)";
     this.context.setLineDash([5, 6]);
     this.drawLine(this.pointer.x, 0, this.pointer.x, height);
-    this.drawLine(0, this.pointer.y, width, this.pointer.y);
     this.context.restore();
+
+    for (const value of hoverValues) {
+      if (!value.inView) {
+        continue;
+      }
+
+      this.context.save();
+      this.context.beginPath();
+      this.context.arc(this.pointer.x, value.screenY, 4.5, 0, Math.PI * 2);
+      this.context.fillStyle = "#fff";
+      this.context.fill();
+      this.context.lineWidth = 2.5;
+      this.context.strokeStyle = value.expression.color;
+      this.context.stroke();
+      this.context.restore();
+    }
   }
 
   private drawLine(x1: number, y1: number, x2: number, y2: number): void {
@@ -830,9 +865,67 @@ class GraphingCalculator {
       this.readout.textContent = "Move over the graph";
       return;
     }
+
     const x = this.screenToWorldX(this.pointer.x, this.canvas.clientWidth);
-    const y = this.screenToWorldY(this.pointer.y, this.canvas.clientHeight);
-    this.readout.textContent = `x: ${formatNumber(x)}, y: ${formatNumber(y)}`;
+    const hoverValues = this.getHoverValues(x, this.canvas.clientHeight);
+    const header = document.createElement("div");
+    header.className = "readout-header";
+    header.textContent = `x: ${formatNumber(x)}`;
+
+    if (hoverValues.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "readout-empty";
+      empty.textContent = "No active function values";
+      this.readout.replaceChildren(header, empty);
+      return;
+    }
+
+    const list = document.createElement("div");
+    list.className = "readout-series";
+
+    for (const value of hoverValues) {
+      const row = document.createElement("div");
+      row.className = "readout-row";
+
+      const marker = document.createElement("span");
+      marker.className = "readout-marker";
+      marker.style.backgroundColor = value.expression.color;
+
+      const label = document.createElement("span");
+      label.className = "readout-label";
+      label.textContent = value.expression.text.trim() || `Expression ${value.expression.id}`;
+
+      const yValue = document.createElement("span");
+      yValue.className = "readout-value";
+      yValue.textContent = formatNumber(value.y);
+
+      row.replaceChildren(marker, label, yValue);
+      list.append(row);
+    }
+
+    this.readout.replaceChildren(header, list);
+  }
+
+  private getHoverValues(x: number, height: number): HoverValue[] {
+    return this.expressions.flatMap((expression) => {
+      if (!expression.enabled || !expression.fn) {
+        return [];
+      }
+
+      const y = expression.fn(x);
+      const screenY = this.worldToScreenY(y, height);
+
+      if (!Number.isFinite(y) || !Number.isFinite(screenY)) {
+        return [];
+      }
+
+      return [{
+        expression,
+        y,
+        screenY,
+        inView: screenY >= 0 && screenY <= height,
+      }];
+    });
   }
 
   private exportPng(): void {
