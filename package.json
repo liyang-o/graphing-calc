@@ -1,0 +1,33 @@
+{
+  "name": "graphing-calc",
+  "version": "1.0.0",
+  "description": "A browser-based interactive graphing calculator built with TypeScript and Canvas.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "tsc --noEmit",
+    "dev": "vite --host 0.0.0.0",
+    "build": "tsc && vite build",
+    "preview": "vite preview --host 0.0.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/liyang-o/graphing-calc.git"
+  },
+  "keywords": [
+    "graphing-calculator",
+    "typescript",
+    "vite",
+    "canvas"
+  ],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/liyang-o/graphing-calc/issues"
+  },
+  "homepage": "https://liyang-o.github.io/graphing-calc/",
+  "devDependencies": {
+    "typescript": "^6.0.3",
+    "vite": "^8.0.16"
+  }
+}
